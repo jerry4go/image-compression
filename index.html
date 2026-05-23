@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片压缩 - 本地处理，保护隐私</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header__icon" aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="currentColor" opacity="0.15"/>
+          <path d="M8 20l4-4 3 3 5-6 4 5v2H8v-2z" fill="currentColor"/>
+          <circle cx="12" cy="12" r="2" fill="currentColor"/>
+        </svg>
+      </div>
+      <h1 class="header__title">图片压缩</h1>
+      <p class="header__subtitle">所有处理均在浏览器本地完成，图片不会上传到任何服务器</p>
+    </header>
+
+    <main class="main">
+      <section
+        class="upload-zone"
+        id="uploadZone"
+        aria-label="上传图片区域"
+      >
+        <input
+          type="file"
+          id="fileInput"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/bmp"
+          multiple
+          hidden
+        >
+        <div class="upload-zone__content">
+          <div class="upload-zone__icon" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <path d="M24 8v20M14 18l10-10 10 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8 32v4a4 4 0 004 4h24a4 4 0 004-4v-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <p class="upload-zone__text">拖放图片到此处，或 <button type="button" class="upload-zone__link" id="browseBtn">点击选择文件</button></p>
+          <p class="upload-zone__hint">支持 JPG、PNG、WebP、GIF、BMP</p>
+        </div>
+      </section>
+
+      <section class="results" id="results" hidden>
+        <div class="results__header">
+          <h2 class="results__title">压缩结果</h2>
+          <button type="button" class="btn btn--secondary" id="clearBtn">清空全部</button>
+        </div>
+        <ul class="results__list" id="resultsList"></ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>100% 本地处理 · 数据不上传 · 开源免费</p>
+    </footer>
+  </div>
+
+  <template id="resultItemTemplate">
+    <li class="result-item">
+      <div class="result-item__preview">
+        <img class="result-item__img" alt="" loading="lazy">
+      </div>
+      <div class="result-item__info">
+        <p class="result-item__name"></p>
+        <div class="result-item__sizes">
+          <span class="size size--before"></span>
+          <svg class="size-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="size size--after"></span>
+          <span class="size-badge"></span>
+        </div>
+        <div class="result-item__status">
+          <span class="status-text"></span>
+        </div>
+      </div>
+      <div class="result-item__actions">
+        <button type="button" class="btn btn--primary btn--download" disabled>下载</button>
+      </div>
+    </li>
+  </template>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
