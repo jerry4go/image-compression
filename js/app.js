@@ -171,14 +171,13 @@
 
   async function runGifsiclePreset(file, preset) {
     const gifsicle = await getGifsicle();
-    const buffer = await file.arrayBuffer();
     const command = preset.lossless
-      ? '-O1 --no-warnings 1.gif -o /out/out.gif'
-      : `-O1 --lossy=${preset.lossy} --colors ${preset.colors} --no-warnings 1.gif -o /out/out.gif`;
+      ? '-O1 1.gif -o /out/out.gif'
+      : `-O1 --lossy=${preset.lossy} --colors ${preset.colors} 1.gif -o /out/out.gif`;
 
     const result = await gifsicle.run({
-      input: [{ file: buffer, name: '1.gif' }],
-      command: [command],
+      files: [{ file, name: '1.gif' }],
+      command,
     });
 
     if (!result || !result.length) {
@@ -189,17 +188,22 @@
 
   async function compressGif(file) {
     let bestBlob = null;
+    let lastError = null;
 
     for (const preset of GIF_PRESETS) {
-      const outFile = await runGifsiclePreset(file, preset);
-      if (!bestBlob || outFile.size < bestBlob.size) {
-        bestBlob = outFile;
+      try {
+        const outFile = await runGifsiclePreset(file, preset);
+        if (!bestBlob || outFile.size < bestBlob.size) {
+          bestBlob = outFile;
+        }
+        if (outFile.size < file.size * 0.85) break;
+      } catch (err) {
+        lastError = err;
       }
-      if (outFile.size < file.size * 0.85) break;
     }
 
     if (!bestBlob) {
-      return { blob: file, ext: 'gif', mime: 'image/gif', keptOriginal: true };
+      throw lastError || new Error('GIF 压缩失败');
     }
 
     return pickBestResult(file, bestBlob, 'gif', 'image/gif');
