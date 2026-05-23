@@ -66,6 +66,17 @@
     });
   }
 
+  function needsResize(img) {
+    return img.width > MAX_DIMENSION || img.height > MAX_DIMENSION;
+  }
+
+  function pickBestResult(file, compressedBlob, ext, mime) {
+    if (compressedBlob.size < file.size) {
+      return { blob: compressedBlob, ext, mime, keptOriginal: false };
+    }
+    return { blob: file, ext, mime, keptOriginal: true };
+  }
+
   function drawToCanvas(img, mime) {
     let { width, height } = img;
     if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
@@ -98,22 +109,7 @@
     });
   }
 
-  async function compressImage(file) {
-    const format = getOutputFormat(file);
-
-    if (format.passthrough) {
-      return { blob: file, ext: format.ext, mime: format.mime };
-    }
-
-    const img = await loadImageFromFile(file);
-    const { mime, ext } = format;
-    const canvas = drawToCanvas(img, mime);
-
-    if (mime === 'image/png') {
-      const blob = await canvasToBlob(canvas, mime);
-      return { blob, ext, mime };
-    }
-
+  async function compressLossy(file, canvas, mime, ext) {
     let bestBlob = null;
     let quality = MAX_QUALITY;
 
@@ -126,19 +122,34 @@
       quality -= QUALITY_STEP;
     }
 
-    if (bestBlob.size >= file.size) {
-      quality = MAX_QUALITY;
-      while (quality >= MIN_QUALITY) {
-        const blob = await canvasToBlob(canvas, mime, quality);
-        if (blob.size < file.size) {
-          bestBlob = blob;
-          break;
-        }
-        quality -= QUALITY_STEP;
-      }
+    return pickBestResult(file, bestBlob, ext, mime);
+  }
+
+  async function compressImage(file) {
+    const format = getOutputFormat(file);
+
+    if (format.passthrough) {
+      return { blob: file, ext: format.ext, mime: format.mime, keptOriginal: true };
     }
 
-    return { blob: bestBlob, ext, mime };
+    const img = await loadImageFromFile(file);
+    const { mime, ext } = format;
+    const shouldResize = needsResize(img);
+
+    // PNG 经 Canvas 重编码通常会变大（浏览器不做 DEFLATE 优化），
+    // 若无需缩小尺寸，直接保留原图
+    if (mime === 'image/png' && !shouldResize) {
+      return { blob: file, ext, mime, keptOriginal: true };
+    }
+
+    const canvas = drawToCanvas(img, mime);
+
+    if (mime === 'image/png') {
+      const blob = await canvasToBlob(canvas, mime);
+      return pickBestResult(file, blob, ext, mime);
+    }
+
+    return compressLossy(file, canvas, mime, ext);
   }
 
   function createResultItem(file) {
@@ -176,7 +187,8 @@
     };
   }
 
-  function updateResultSuccess(ctx, file, blob, ext) {
+  function updateResultSuccess(ctx, file, result) {
+    const { blob, ext, keptOriginal } = result;
     const saved = calcSavedPercent(file.size, blob.size);
     ctx.sizeAfter.textContent = formatSize(blob.size);
     ctx.badge.hidden = false;
@@ -185,27 +197,37 @@
       ctx.badge.textContent = `-${saved}%`;
       ctx.badge.classList.remove('size-badge--none');
     } else {
-      ctx.badge.textContent = '已优化';
+      ctx.badge.textContent = '原图';
       ctx.badge.classList.add('size-badge--none');
     }
 
-    ctx.statusText.textContent = saved > 0 ? '压缩完成' : '已是最佳大小';
+    if (saved > 0) {
+      ctx.statusText.textContent = '压缩完成';
+    } else if (keptOriginal) {
+      ctx.statusText.textContent = '原图已是最优，已保留原图';
+    } else {
+      ctx.statusText.textContent = '已是最佳大小';
+    }
     ctx.statusText.classList.remove('status-text--processing');
 
-    const downloadUrl = URL.createObjectURL(blob);
     const baseName = file.name.replace(/\.[^.]+$/, '');
-    const downloadName = `${baseName}_compressed.${ext}`;
+    const downloadName = keptOriginal ? file.name : `${baseName}_compressed.${ext}`;
 
     ctx.downloadBtn.disabled = false;
     ctx.downloadBtn.onclick = () => {
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = downloadUrl;
+      a.href = url;
       a.download = downloadName;
       a.click();
+      URL.revokeObjectURL(url);
     };
 
-    ctx.revokePreview();
-    ctx.img.src = downloadUrl;
+    if (!keptOriginal) {
+      const previewUrl = URL.createObjectURL(blob);
+      ctx.revokePreview();
+      ctx.img.src = previewUrl;
+    }
   }
 
   function updateResultError(ctx, message) {
@@ -221,8 +243,8 @@
     const ctx = createResultItem(file);
 
     try {
-      const { blob, ext } = await compressImage(file);
-      updateResultSuccess(ctx, file, blob, ext);
+      const result = await compressImage(file);
+      updateResultSuccess(ctx, file, result);
     } catch (err) {
       updateResultError(ctx, err.message || '压缩失败');
     }
