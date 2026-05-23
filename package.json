@@ -1,0 +1,6 @@
+{
+  "name": "image-compression",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Browser-based image compression tool"
+}

@@ -29,7 +29,7 @@
       return { mime: 'image/webp', ext: 'webp' };
     }
     if (type === 'image/gif' || extFromName === 'gif') {
-      return { mime: 'image/gif', ext: 'gif', passthrough: true };
+      return { mime: 'image/gif', ext: 'gif' };
     }
     if (type === 'image/bmp' || extFromName === 'bmp') {
       return { mime: 'image/bmp', ext: 'bmp', passthrough: true };
@@ -153,6 +153,58 @@
     return pickBestResult(file, bestBlob, 'png', 'image/png');
   }
 
+  const GIF_PRESETS = [
+    { lossy: 40, colors: 256 },
+    { lossy: 60, colors: 160 },
+    { lossy: 80, colors: 128 },
+    { lossless: true },
+  ];
+
+  let gifsicleModule = null;
+
+  async function getGifsicle() {
+    if (!gifsicleModule) {
+      gifsicleModule = (await import('./lib/gifsicle.min.js')).default;
+    }
+    return gifsicleModule;
+  }
+
+  async function runGifsiclePreset(file, preset) {
+    const gifsicle = await getGifsicle();
+    const buffer = await file.arrayBuffer();
+    const command = preset.lossless
+      ? '-O1 --no-warnings 1.gif -o /out/out.gif'
+      : `-O1 --lossy=${preset.lossy} --colors ${preset.colors} --no-warnings 1.gif -o /out/out.gif`;
+
+    const result = await gifsicle.run({
+      input: [{ file: buffer, name: '1.gif' }],
+      command: [command],
+    });
+
+    if (!result || !result.length) {
+      throw new Error('GIF 压缩失败');
+    }
+    return result[0];
+  }
+
+  async function compressGif(file) {
+    let bestBlob = null;
+
+    for (const preset of GIF_PRESETS) {
+      const outFile = await runGifsiclePreset(file, preset);
+      if (!bestBlob || outFile.size < bestBlob.size) {
+        bestBlob = outFile;
+      }
+      if (outFile.size < file.size * 0.85) break;
+    }
+
+    if (!bestBlob) {
+      return { blob: file, ext: 'gif', mime: 'image/gif', keptOriginal: true };
+    }
+
+    return pickBestResult(file, bestBlob, 'gif', 'image/gif');
+  }
+
   async function compressLossy(file, canvas, mime, ext) {
     let bestBlob = null;
     let quality = MAX_QUALITY;
@@ -174,6 +226,10 @@
 
     if (format.passthrough) {
       return { blob: file, ext: format.ext, mime: format.mime, keptOriginal: true };
+    }
+
+    if (format.mime === 'image/gif') {
+      return compressGif(file);
     }
 
     const img = await loadImageFromFile(file);
@@ -201,7 +257,9 @@
     sizeBefore.textContent = formatSize(file.size);
     sizeAfter.textContent = '—';
     badge.hidden = true;
-    statusText.textContent = '正在压缩…';
+    statusText.textContent = file.type === 'image/gif' || /\.gif$/i.test(file.name)
+      ? 'GIF 压缩中，请稍候…'
+      : '正在压缩…';
     statusText.classList.add('status-text--processing');
 
     const previewUrl = URL.createObjectURL(file);
