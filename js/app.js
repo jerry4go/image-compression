@@ -14,17 +14,27 @@
   const clearBtn = document.getElementById('clearBtn');
   const resultItemTemplate = document.getElementById('resultItemTemplate');
 
-  const supportsWebP = checkWebPSupport();
+  function getOutputFormat(file) {
+    const type = file.type.toLowerCase();
+    const extFromName = (file.name.match(/\.([^.]+)$/i) || [])[1]?.toLowerCase() || '';
 
-  function checkWebPSupport() {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1;
-      canvas.height = 1;
-      return canvas.toDataURL('image/webp').startsWith('data:image/webp');
-    } catch {
-      return false;
+    if (type === 'image/jpeg' || type === 'image/jpg' || extFromName === 'jpg' || extFromName === 'jpeg') {
+      return { mime: 'image/jpeg', ext: extFromName === 'jpeg' ? 'jpeg' : 'jpg' };
     }
+    if (type === 'image/png' || extFromName === 'png') {
+      return { mime: 'image/png', ext: 'png' };
+    }
+    if (type === 'image/webp' || extFromName === 'webp') {
+      return { mime: 'image/webp', ext: 'webp' };
+    }
+    if (type === 'image/gif' || extFromName === 'gif') {
+      return { mime: 'image/gif', ext: 'gif', passthrough: true };
+    }
+    if (type === 'image/bmp' || extFromName === 'bmp') {
+      return { mime: 'image/bmp', ext: 'bmp', passthrough: true };
+    }
+
+    return { mime: 'image/jpeg', ext: 'jpg' };
   }
 
   function formatSize(bytes) {
@@ -54,33 +64,6 @@
       };
       img.src = url;
     });
-  }
-
-  function hasAlphaChannel(img) {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.min(img.width, 64);
-    canvas.height = Math.min(img.height, 64);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] < 255) return true;
-    }
-    return false;
-  }
-
-  function getOutputFormat(file, img) {
-    const type = file.type.toLowerCase();
-    if (type === 'image/gif') {
-      return { mime: 'image/jpeg', ext: 'jpg' };
-    }
-    if (type === 'image/png' && hasAlphaChannel(img)) {
-      return { mime: 'image/png', ext: 'png' };
-    }
-    if (supportsWebP) {
-      return { mime: 'image/webp', ext: 'webp' };
-    }
-    return { mime: 'image/jpeg', ext: 'jpg' };
   }
 
   function drawToCanvas(img, mime) {
@@ -116,8 +99,14 @@
   }
 
   async function compressImage(file) {
+    const format = getOutputFormat(file);
+
+    if (format.passthrough) {
+      return { blob: file, ext: format.ext, mime: format.mime };
+    }
+
     const img = await loadImageFromFile(file);
-    const { mime, ext } = getOutputFormat(file, img);
+    const { mime, ext } = format;
     const canvas = drawToCanvas(img, mime);
 
     if (mime === 'image/png') {
