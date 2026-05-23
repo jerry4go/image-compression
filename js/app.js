@@ -4,6 +4,7 @@
   const MAX_DIMENSION = 4096;
   const MIN_QUALITY = 0.72;
   const MAX_QUALITY = 0.92;
+  const PNG_COLOR_STEPS = [256, 224, 192, 160, 128, 96, 64, 0];
   const QUALITY_STEP = 0.04;
 
   const uploadZone = document.getElementById('uploadZone');
@@ -66,10 +67,6 @@
     });
   }
 
-  function needsResize(img) {
-    return img.width > MAX_DIMENSION || img.height > MAX_DIMENSION;
-  }
-
   function pickBestResult(file, compressedBlob, ext, mime) {
     if (compressedBlob.size < file.size) {
       return { blob: compressedBlob, ext, mime, keptOriginal: false };
@@ -109,6 +106,53 @@
     });
   }
 
+  async function getPngPixelFrames(file, img, canvas) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const resized = w !== img.naturalWidth || h !== img.naturalHeight;
+
+    if (!resized && typeof UPNG !== 'undefined') {
+      try {
+        const buffer = await file.arrayBuffer();
+        const decoded = UPNG.decode(buffer);
+        return { frames: UPNG.toRGBA8(decoded), width: decoded.width, height: decoded.height };
+      } catch {
+        // fall through to canvas pixels
+      }
+    }
+
+    const pixels = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    return {
+      frames: [new Uint8Array(pixels).buffer],
+      width: w,
+      height: h,
+    };
+  }
+
+  function encodePngWithColors(frames, width, height, colors) {
+    const encoded = UPNG.encode(frames, width, height, colors);
+    return new Blob([encoded], { type: 'image/png' });
+  }
+
+  async function compressPng(file, img, canvas) {
+    if (typeof UPNG === 'undefined') {
+      throw new Error('PNG 压缩库未加载');
+    }
+
+    const { frames, width, height } = await getPngPixelFrames(file, img, canvas);
+    let bestBlob = null;
+
+    for (const colors of PNG_COLOR_STEPS) {
+      const blob = encodePngWithColors(frames, width, height, colors);
+      if (!bestBlob || blob.size < bestBlob.size) {
+        bestBlob = blob;
+      }
+      if (blob.size < file.size * 0.85) break;
+    }
+
+    return pickBestResult(file, bestBlob, 'png', 'image/png');
+  }
+
   async function compressLossy(file, canvas, mime, ext) {
     let bestBlob = null;
     let quality = MAX_QUALITY;
@@ -134,19 +178,10 @@
 
     const img = await loadImageFromFile(file);
     const { mime, ext } = format;
-    const shouldResize = needsResize(img);
-
-    // PNG 经 Canvas 重编码通常会变大（浏览器不做 DEFLATE 优化），
-    // 若无需缩小尺寸，直接保留原图
-    if (mime === 'image/png' && !shouldResize) {
-      return { blob: file, ext, mime, keptOriginal: true };
-    }
-
     const canvas = drawToCanvas(img, mime);
 
     if (mime === 'image/png') {
-      const blob = await canvasToBlob(canvas, mime);
-      return pickBestResult(file, blob, ext, mime);
+      return compressPng(file, img, canvas);
     }
 
     return compressLossy(file, canvas, mime, ext);
